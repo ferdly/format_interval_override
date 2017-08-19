@@ -1,0 +1,226 @@
+<?php
+
+function format_interval_override(
+                            $datetime_string_start,
+                            $datetime_string_end,
+                            $datetime_string_format_start = 'U',
+                            $datetime_string_format_end = 'U',
+                            $absolute = TRUE,
+                            $granularity = 2,
+                            $langcode = NULL){
+    $absolute = $absolute === FALSE ? FALSE : TRUE;
+
+    $ddi = new drupalDateInterval($datetime_string_start,
+                                    $datetime_string_end,
+                                    $datetime_string_format_start,
+                                    $datetime_string_format_end,
+                                    $absolute);
+    $ddi->devel = TRUE;
+    $buffer = $ddi->drupal_format_interval($granularity, $langcode);
+    $buffer .= $ddi->devel_output_array;
+    return $buffer;
+}// END format_interval_override()
+
+
+
+class drupalDateInterval
+{
+    private $datetime_start;
+    private $datetime_end;
+    private $days;
+    private $days_remaining;
+    private $y = FALSE;
+    private $m = FALSE;
+    private $w = FALSE;
+    private $d = FALSE;
+    private $h;
+    private $i;
+    private $s;
+    public $devel = FALSE;
+    public $devel_output_array;// = array();
+
+    public function __construct($datetime_string_start,
+                                $datetime_string_end,
+                                $datetime_string_format_start = 'U',
+                                $datetime_string_format_end = 'U',
+                                $absolute = TRUE)
+    {
+        $datetime_start = DateTime::createFromFormat($datetime_string_format_start, $datetime_string_start);
+        $datetime_end = DateTime::createFromFormat($datetime_string_format_end, $datetime_string_end);
+        $this->datetime_start = DateTime::createFromFormat($datetime_string_format_start, $datetime_string_start);
+        $this->datetime_end = DateTime::createFromFormat($datetime_string_format_end, $datetime_string_end);
+        $absolute = $absolute === FALSE ? FALSE : TRUE;
+
+        $interval = $datetime_start->diff($datetime_end, $absolute);
+
+        $this->days = $interval->days + 0;
+        $this->days_remaining = $interval->days + 0;
+        $this->h = $interval->h + 0;
+        $this->i = $interval->i + 0;
+        $this->s = $interval->s + 0;
+    }
+    public function drupal_format_interval($granularity = 2, $langcode = NULL)
+    {
+        $granularity = $granularity + 0;
+        $granularity = $granularity > 7 ? 2 : $granularity;
+        $granularity = $granularity < 1 ? 2 : $granularity;
+        $granularity = $granularity != floor($granularity) ? 2 : $granularity;
+        $buffer = '';
+        $buffer_devel = '';
+        $buffer_devel .= '<br>||Test: ';
+        $this->gatherDays();
+
+        $buffer_devel .= $this->days_remaining . 'DAYS REMANING||<br>';
+        $i_done = 0;
+        $attribute_array = array('y','m','w','d','h','i','s');
+        $attribute_label_array = array(' year{s} ',' month{s} ',' week{s} ',' day{s} ',' hour{s} ',' minute{s} ',' second{s} ');
+        foreach ($attribute_array as $index => $att_this) {
+            $skip_this = FALSE;
+            $label_this = array_shift($attribute_label_array);
+            $plural_this = $this->$att_this + 0 == 1 ? '' : 's';
+            $label_this = str_replace('{s}', $plural_this, $label_this);
+            if ($this->$att_this + 0 <= 0 || $granularity <= $i_done) {
+                $skip_this = TRUE;
+                $buffer_devel .= $this->$att_this . $label_this;
+            }
+            if (!$skip_this) {
+                $buffer .= $this->$att_this . $label_this;
+                $i_done++;
+            }
+        }
+
+        if ($this->devel) {
+            $this->devel_output_array = $buffer_devel . $this->devel_output_array;
+        }
+        return $buffer;
+    }
+
+    private function gatherDays(){
+        $this->days_remaining = $this->days;
+        if ($this->w === FALSE) {
+            $this->gatherWeeks();
+        }
+        $this->d = $this->days_remaining;
+    }
+    private function gatherWeeks(){
+        if ($this->m === FALSE) {
+            $this->gatherMonths();
+        }
+        $this->w = floor($this->days_remaining / 7);
+        $this->days_remaining = $this->days_remaining % 7;
+    }
+    private function gatherMonths(){
+        if ($this->y === FALSE) {
+            $this->gatherYears();
+        }
+        $buffer = '<br>[begin Buffer]<br>';
+        $buffer .= '[/Loop Years]<br><br>';
+        // $span_years_result = $years_of_year_loop;
+        // $span_days_remainder_result = $span_days_int_decrement_year;
+        // $span_days_result = $span_days_sofar;
+
+        $days_ago_string = $this->days_remaining . ' days ago';
+        $rewind_date = strtotime($days_ago_string,$this->datetime_end->format('U'));
+        $rewind_start_month = date("m",$rewind_date) + 0;
+        $rewind_start_day = date("d",$rewind_date) + 0;
+        $rewind_start_year = date("Y",$rewind_date) + 0;
+        $buffer .= '$rewind_date: ' . date("Y-m-d", $rewind_date);
+        $buffer .= '<br>';
+
+
+        $buffer .= '<br>[Loop Months]<br>';
+        $month_loop_days_array = array();
+        $month_this = $rewind_start_month;
+        $i = 0;
+        $i_max = 13; // the loop should be moot for extra months
+        $month_loop_month = $rewind_start_month;
+        $month_loop_day = $rewind_start_day;
+        $month_loop_year = $rewind_start_year;
+        $days_of_month_loop = 0;
+        $months_of_month_loop = 0;
+        $span_days_int_loop_month = $this->days_remaining;
+        $span_days_int_decrement_month = 0;
+        while ( $i <= $i_max ) {
+            $month_loop_date_string = $month_loop_year . substr("00". $month_loop_month, -2) . substr("00". $month_loop_day, -2);
+            $month_days = date('t', strtotime($month_loop_date_string)) + 0;
+            $month_name = date('F-Y', strtotime($month_loop_date_string));
+            $span_days_int_decrement_month =
+                $span_days_int_loop_month >= $month_days ?
+                $span_days_int_loop_month - $month_days :
+                $span_days_int_loop_month;
+
+            $months_of_month_loop =
+                $span_days_int_loop_month >= $month_days ?
+                $months_of_month_loop + 1 :
+                $months_of_month_loop;
+            $span_days_sofar = "{$months_of_month_loop}&nbsp;months&nbsp;{$span_days_int_decrement_month}&nbsp;days";
+            $span_days_string = "&nbsp;=:&nbsp;(&nbsp;{$span_days_int_loop_month}&nbsp;-&nbsp;{$month_days}&nbsp;)&nbsp;=&nbsp;{$span_days_sofar}";
+
+            $month_loop_days_array[$i] = $month_days;
+            $days_of_month_loop += $month_days;
+            $buffer .= "{$i}&nbsp;[{$month_name}]&nbsp;{$month_loop_days_array[$i]}&nbsp;[{$days_of_month_loop}]{$span_days_string}<br>";
+
+            $span_days_int_loop_month = $span_days_int_decrement_month;
+            $month_loop_month++;
+            $next_year = $month_loop_month > 12 ? 12 : 0;
+            $month_loop_month = $month_loop_month - $next_year;
+            // $month_loop_day = $month_loop_day;
+            $month_loop_year +=  $next_year > 0 ? 1 : 0;
+            $i++;
+        }
+        $buffer .= '[/Loop Months]<br>';
+        $buffer .= '[end Buffer]<br><br>';
+        $this->m = $months_of_month_loop;
+        $this->days_remaining = $span_days_int_decrement_month;
+        if ($this->devel) {
+            $this->devel_output_array .= $buffer;
+        }
+
+    }
+    private function gatherYears(){
+        $buffer = '<br>[begin Buffer]';
+        $year_start = $this->datetime_start->format('Y') + 0;
+        $year_end = $this->datetime_end->format('Y') + 0;
+        $buffer .= '<br>[Loop Years]<br>';
+        $year_loop_days_array = array();
+        $year_loop_count = $year_start;
+        $i = 0;
+        $days_of_year_loop = 0;
+        $years_of_year_loop = 0;
+        $span_days_int_loop_year = $this->days_remaining;
+        $span_days_int_decrement_year = 0;
+        while ($year_loop_count <= $year_end) {
+            $date_int_loop = mktime(23,59,59,12,31,$year_loop_count);
+            $doy_loop_year = date('z',$date_int_loop)+ 1;
+            $span_days_int_decrement_year =
+                $span_days_int_loop_year >= $doy_loop_year ?
+                $span_days_int_loop_year - $doy_loop_year :
+                $span_days_int_loop_year;
+
+            $years_of_year_loop =
+                $span_days_int_loop_year >= $doy_loop_year ?
+                $years_of_year_loop + 1 :
+                $years_of_year_loop;
+            $span_days_sofar = "{$years_of_year_loop}&nbsp;years&nbsp;{$span_days_int_decrement_year}&nbsp;days";
+            $span_days_string = "&nbsp;=:&nbsp;(&nbsp;{$span_days_int_loop_year}&nbsp;-&nbsp;{$doy_loop_year}&nbsp;)&nbsp;=&nbsp;{$span_days_sofar}";
+
+            $year_loop_days_array[$i] = $doy_loop_year;
+            $days_of_year_loop += $doy_loop_year;
+            $buffer .= "{$i}&nbsp;[{$year_loop_count}]&nbsp;{$year_loop_days_array[$i]}&nbsp;[{$days_of_year_loop}]{$span_days_string}<br>";
+
+            $i++;
+            $span_days_int_loop_year = $span_days_int_decrement_year;
+            $year_loop_count++;
+            if ($i > 100) {
+                break;
+            }
+        }
+        $buffer .= '[/Loop Years]';
+        $buffer .= '[end Buffer]<br><br>';
+        $this->y = $years_of_year_loop;
+        $this->days_remaining = $span_days_int_decrement_year;
+        if ($this->devel) {
+            $this->devel_output_array .= $buffer;
+        }
+    }
+}
